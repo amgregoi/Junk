@@ -4,31 +4,56 @@ function Set (list)
 	return set
 end
 
-local itemLevelLimit = 400;
+local itemLevelLimit = 649;
 local bannedSubClasses = Set {"Consumable", "Potion", "Other", "Food & Drink", "Flask", "Elixir", "Reagent"};
 local bannedClasses = Set {"Trade Goods"};
 local bannedItemsById = Set {71084, 71085, 71086};
-
+local EventFrame;
+local isSelling = true;
 
 -- vendors items under certain ilvl threshold
 -- and not in the above banned sets
-function SellItems()
+function SellItems(delete, nomsg, getValue)
+	for b=0,4 do 
+		for s=1,GetContainerNumSlots(b)do 
+			local item_link=GetContainerItemLink(b,s);
+			local item_id = GetContainerItemID(b,s);
+
+			if item_link and item_id and GetItemInfo(item_link) then 
+				name, link, quality, iLvl, reqLvl, class, subClass, maxStack, _, _, count = GetItemInfo(item_link)
+				local p = count * select(2, GetContainerItemInfo(b, s))
+				if iLvl < itemLevelLimit 
+				and not bannedSubClasses[subClass]
+				and not bannedClasses[class]
+				and not bannedItemsById[item_id]
+				and not select(3,GetContainerItemInfo(b,s))
+				and p > 0 then 
+					--print("Selling "..item_link);
+					UseContainerItem(b,s);
+					PickupMerchantItem();						
+				end 
+			end
+		end
+	end	
+end
+
+-- Gets total value of sold items
+function GetValue()
 	local count = 0;
 	for b=0,4 do 
 		for s=1,GetContainerNumSlots(b)do 
 			local item_link=GetContainerItemLink(b,s);
 			local item_id = GetContainerItemID(b,s);
-			if item_link then 
-				name, link, quality, iLvl, reqLvl, class, subClass, maxStack, _, _, price = GetItemInfo(item_link)
+			if item_link and item_id and GetItemInfo(item_link) then 
+				local p = select(11, GetItemInfo(item_link))*select(2, GetContainerItemInfo(b, s))
+				name, link, quality, iLvl, reqLvl, class, subClass, maxStack, _, _, _ = GetItemInfo(item_link)
 				if iLvl < itemLevelLimit 
 				and not bannedSubClasses[subClass]
 				and not bannedClasses[class]
 				and not bannedItemsById[item_id]
-				and price > 0 then 
-					--print("Selling "..item_link..iLvl.." for "..price.." class "..subClass)
-					--print(item_link.." - ID - "..item_id.."  "..class.."    "..subClass);
-					UseContainerItem(b,s);
-					count = count + price;
+				and not select(3,GetContainerItemInfo(b,s))
+				and p > 0 then 						
+					count = count + p;
 				end 
 			end
 		end
@@ -38,14 +63,43 @@ function SellItems()
 	print("Total: "..gold.."g "..silver.."s "..copper.."c ");
 end
 
--- setup slash commands
+-- Event Function
+function runJunk(self,event)
+	if event=="MERCHANT_SHOW" then
+		self:RegisterEvent("BAG_UPDATE_DELAYED");
+	elseif event=="MERCHANT_CLOSED" then
+		self:UnregisterEvent("BAG_UPDATE_DELAYED");
+		GetValue();
+		return
+	end 
+	
+--	if(isSelling) then 
+		SellItems();
+		--EventFrame:UnregisterEvent("MERCHANT_SHOW");
+		--EventFrame:UnregisterEvent("MERCHANT_CLOSED");
+--		isSelling = false;
+	--end
+end		
+
+-- setup slash command handler
+-- need to find event for merchant_Visible 
 SLASH_JUNK1 = '/junk'
 local function handler(msg, editbox)
 	if msg == 'sell' then
-		SellItems();
+		isSelling = true;
+		runJunk()
+		--[[EventFrame=CreateFrame("Frame");
+		EventFrame:RegisterEvent("MERCHANT_SHOW");
+		EventFrame:RegisterEvent("MERCHANT_CLOSED");
+		EventFrame:SetScript("OnEvent",runJunk);
+		]]--
 	else
-		print("You're stupid");
+		print("try /junk sell");
 	end
 end
+SlashCmdList["JUNK"] = handler;
 
-SlashCmdList["JUNK"] = handler; -- Also a valid assignment strategy
+
+
+
+
